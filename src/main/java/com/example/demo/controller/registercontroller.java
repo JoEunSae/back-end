@@ -10,13 +10,13 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/")
-@CrossOrigin("www.metahospital.shop")
 public class registercontroller {
 
     @Autowired
     private RegisterService registerService;
 
     @PostMapping("/vaccine")
+
     public ResponseEntity<String> vaccineRegister(@RequestBody Vaccine vaccine) {
         Vaccine registeredVaccine = registerService.vaccineRegister(vaccine);
         if (registeredVaccine != null) {
@@ -27,6 +27,7 @@ public class registercontroller {
     }
 
     @PostMapping("/health-check")
+
     public ResponseEntity<String> healthCheckRegister(@RequestBody HealthCheck healthCheck) {
         HealthCheck registeredHealthCheck = registerService.healthCheckRegister(healthCheck);
         if (registeredHealthCheck != null) {

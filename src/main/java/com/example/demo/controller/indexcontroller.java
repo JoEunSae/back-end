@@ -15,8 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 
 @RestController
-@RequestMapping("/login")
-@CrossOrigin("www.metahospital.shop")
+@RequestMapping("/")
 public class indexcontroller {
 
     @Autowired
@@ -27,6 +26,7 @@ public class indexcontroller {
 
     @Autowired
     private RegisterService registerService;
+
 
     @PostMapping("/login")
     public ResponseEntity<String> authenticateUser(@RequestBody User user) {
@@ -40,6 +40,7 @@ public class indexcontroller {
     }
 
     @PostMapping("/join")
+
     public User addUser (@RequestBody User user){
         return joinService.addUser(user);
     }
