@@ -1,0 +1,97 @@
+pipeline {
+    agent any
+
+    environment {
+            CONTAINER_REGISTRY = 'goodbirdacr.azurecr.io'
+            RESOURCE_GROUP = 'aks_test'
+            REPO = 'back-end'
+            IMAGE_NAME = 'test/back'
+        }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Grant Execute Permission to Gradle Wrapper') {
+                    steps {
+                        sh 'chmod +x ./gradlew'
+                    }
+                }
+
+ // JAR 파일 빌드 단계 추가
+        stage('Build JAR') {
+            steps {
+                script {
+                    withEnv(['JAVA_HOME=/usr/lib/jvm/jdk-17.0.14']) {
+                        // Gradle을 사용하여 JAR 파일 빌드
+                        sh './gradlew --version'
+                        sh './gradlew clean build --warning-mode=none -x test --info'
+                    }
+                }
+            }
+        }
+
+         stage('Determine Version') {
+             steps {
+                 script {
+                     withCredentials([usernamePassword(credentialsId: 'acr-credential-id', passwordVariable: 'ACR_PASSWORD', usernameVariable: 'ACR_USERNAME')]) {
+
+                         // ACR에서 최신 태그 가져오기 (GString 오류 해결)
+                         def latestTag = sh(script: '''
+                             az acr repository show-tags --name goodbirdacr.azurecr.io --repository front-end --orderby time_desc --output tsv | grep -E '^v[0-9]+\\\\.[0-9]+$' | head -n 1 || echo ""
+                         ''', returnStdout: true).trim()
+
+                         // 최신 태그가 없으면 v1.0부터 시작
+                         if (!latestTag) {
+                             env.TAG_VERSION = "v1.0"
+                         } else {
+                             def versionParts = latestTag.replace("v", "").split("\\.")
+                             def newVersion = versionParts[0] + "." + (versionParts[1].toInteger() + 1)
+                             env.TAG_VERSION = "v${newVersion}"
+                         }
+
+                         echo "New Image Version: ${env.TAG_VERSION}"
+
+                         // 기존 태그 목록 가져오기 (GString 오류 해결)
+                         def existingTags = sh(script: '''
+                             az acr repository show-tags --name goodbirdacr.azurecr.io --repository front-end --orderby time_desc --output tsv | grep -E '^v[0-9]+\\\\.[0-9]+$' | head -n 5 || echo ""
+                         ''', returnStdout: true).trim()
+
+                         def allTags = "latest,${env.TAG_VERSION}"
+
+                         if (existingTags) {
+                             allTags += "," + existingTags.replace("\n", ",")
+                         }
+
+                         env.ALL_TAGS = allTags
+                         echo "Image will be tagged as: ${env.ALL_TAGS}"
+                     }
+                 }
+             }
+         }
+
+         stage('Build and Push Docker Image to ACR') {
+             steps {
+                 script {
+                     withCredentials([usernamePassword(credentialsId: 'acr-credential-id', passwordVariable: 'ACR_PASSWORD', usernameVariable: 'ACR_USERNAME')]) {
+                         // Log in to ACR securely
+                         sh "az acr login --name ${CONTAINER_REGISTRY} --username ${ACR_USERNAME} --password ${ACR_PASSWORD}"
+
+                         // Docker 이미지 빌드 (모든 태그 적용)
+                         def tagCommands = env.ALL_TAGS.split(",").collect { tag ->
+                             return "-t ${CONTAINER_REGISTRY}/${REPO}:${tag}"
+                         }.join(" ")
+
+                         sh """
+                             docker build ${tagCommands} .
+                             ${env.ALL_TAGS.split(",").collect { tag -> "docker push ${CONTAINER_REGISTRY}/${REPO}:${tag}" }.join("\n")}
+                         """
+                     }
+                 }
+             }
+         }
+     }
+ }
